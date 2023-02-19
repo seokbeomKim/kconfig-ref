@@ -1,4 +1,4 @@
-;;; kconfig-ref.el --- Minor mode for looking up kconfig symbol quickly
+;;; kconfig-ref.el --- A simple package for looking up kconfig symbol quickly
 ;;
 ;; Copyright (C) 2023 Jason Kim
 ;;
@@ -28,8 +28,8 @@
 
 ;;; Commentary:
 
-;; This is a minor mode for looking up kconfig symbols and values with parsing
-;; the .config file in the Linux kernel directory.
+;; This is a simple package for looking up kconfig symbols and values with
+;; parsing the .config file in the Linux kernel directory.
 
 ;; Setup:
 
