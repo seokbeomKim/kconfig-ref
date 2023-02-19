@@ -40,7 +40,7 @@
 (require 'ripgrep)
 
 (defvar kconfig-ref-config-file ".config")
-(setq kconfig-ref-last-find-config nil)
+(defvar kconfig-ref-last-find-config nil)
 
 (defun kconfig-ref-config-file-exist ()
   (file-exists-p (concat (projectile-acquire-root) ".config")))
@@ -55,8 +55,8 @@
         (let ((dependencies (substring line (match-end 0))))
           (dolist (depend (split-string dependencies "&&\\|||"))
             (message (string-trim depend))
-            (let ((depend-on (string-trim depend)))
-              (setq backup-buffer (current-buffer))
+            (let ((depend-on (string-trim depend))
+                  (backup-buffer (current-buffer)))
               (find-file (concat (projectile-acquire-root) kconfig-ref-config-file))
               (goto-char (point-min))
               (condition-case err
