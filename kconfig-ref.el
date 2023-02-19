@@ -43,10 +43,12 @@
 (defvar kconfig-ref-last-find-config nil)
 
 (defun kconfig-ref-config-file-exist ()
+  "Check .config exists in the Linux kernel source tree."
   (file-exists-p (concat (projectile-acquire-root) ".config")))
 
 (defun kconfig-ref-parse-item (line)
-  "Add dependency information through parsing .config"
+  "Add dependency information through parsing .config.
+Argument LINE A line of the Kconfig definition block."
   (when (string-match "depends on" line)
     ;; if .config does not exist, skip to parse .config file
     (if (not (kconfig-ref-config-file-exist))
@@ -70,7 +72,7 @@
   line)
 
 (defun kconfig-ref-find-file-hook ()
-  "Ripgrep search hook"
+  "Ripgrep search hook."
 
   (let ((output-buffer-name "*kconfig-ref*")
         (kconfig-output-string "")
@@ -122,6 +124,8 @@
   (switch-to-buffer kconfig-ref-backup-buffer))
 
 (defun kconfig-ref-find-file-with-name (name)
+  "Set config-key as search keyword such as \"config SPI\".
+Argument NAME kconfig symbol name."
   (let ((config-key (concat "config " name)))
     (setq kconfig-ref-last-find-config config-key)
     (add-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook)
@@ -130,7 +134,7 @@
                     '("-g 'Kconfig*'" ))))
 
 (defun kconfig-ref-find-config ()
-  "Find kconfig deinifition under the cursor"
+  "Find kconfig deinifition under the cursor."
   (interactive)
   (setq kconfig-ref-backup-buffer (current-buffer))
   (setq-local valid-input (replace-regexp-in-string "^CONFIG_" "" (current-word)))
