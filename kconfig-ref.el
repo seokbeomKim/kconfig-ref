@@ -121,7 +121,8 @@ Argument LINE A line of the Kconfig definition block."
       (read-only-mode t)
       (goto-char (point-min))))
   (other-window 1)
-  (switch-to-buffer kconfig-ref-backup-buffer))
+  (switch-to-buffer kconfig-ref-backup-buffer)
+  (remove-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook))
 
 (defun kconfig-ref-find-file-with-name (name)
   "Set config-key as search keyword such as \"config SPI\".
