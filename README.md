@@ -4,10 +4,9 @@ kconfig-ref is an Emacs package that helps you find the Kconfig implementation
 of a symbol under the cursor quickly.
 
 ## Installation
-It's available on [MELPA](https://melpa.org/)
 
 ```
-M-x package-install kconfig-ref
+(require 'kconfig-ref)
 ```
 
 ## Motivation
