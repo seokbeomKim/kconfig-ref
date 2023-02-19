@@ -76,7 +76,6 @@
         (kconfig-output-string "")
         (ripgrep-search-buffer-name (concat "*ripgrep-search*<" (projectile-project-name) ">")))
 
-    (setq kconfig-output-string (concat kconfig-ref-last-find-config "\n"))
     (get-buffer-create output-buffer-name)
     (with-current-buffer ripgrep-search-buffer-name
       (message (buffer-name))
@@ -86,6 +85,12 @@
               (kconfig-lnum (match-string 2))
               (kconfig-item (match-string 3))
               (kconfig-done nil))
+          (setq kconfig-output-string
+                (concat (format "Found in [[%s::%s][%s]]\n\n"
+                                (concat (projectile-acquire-root) kconfig-path)
+                                kconfig-lnum
+                                kconfig-path)
+                        kconfig-ref-last-find-config "\n"))
           (find-file kconfig-path)
           (goto-char (point-min))
           (search-forward kconfig-item)
@@ -110,7 +115,9 @@
       (insert kconfig-output-string "\n")
       (other-window 1)
       (switch-to-buffer output-buffer-name)
-      (read-only-mode t)))
+      (org-mode)
+      (read-only-mode t)
+      (goto-char (point-min))))
   (other-window 1)
   (switch-to-buffer kconfig-ref-backup-buffer))
 
