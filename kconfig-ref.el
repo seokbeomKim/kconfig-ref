@@ -9,7 +9,7 @@
 ;; Version: 0.1.0
 ;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
-;; Package-Requires: ((emacs "24.4"))
+;; Package-Requires: ((emacs "24.4") (ripgrep "20220520.1410") (projectile "2.7.0"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -55,31 +55,31 @@ Argument LINE A line of the Kconfig definition block."
   (when (string-match "depends on" line)
     ;; if .config does not exist, skip to parse .config file
     (if (not (kconfig-ref-config-file-exist))
-        (message "No .config in the kernel root directory.")
+	(message "No .config in the kernel root directory.")
       (progn
-        (let ((dependencies (substring line (match-end 0))))
-          (dolist (depend (split-string dependencies "&&\\|||"))
-            (message (string-trim depend))
-            (let ((depend-on (string-trim depend))
-                  (backup-buffer (current-buffer)))
-              (find-file (concat (projectile-acquire-root) kconfig-ref-config-file))
-              (goto-char (point-min))
-              (condition-case err
-                  (progn
-                    (if (re-search-forward (concat "CONFIG_" depend-on "=\\(.*\\)"))
-                        (setq line (replace-regexp-in-string depend-on
-                                                             (concat depend-on "[=" (match-string 1) "]")
-                                                             line))
-                      (setq line (replace-regexp-in-string depend-on
-                                                           (concat depend-on "[=N]")
-                                                           line))))
-                (search-failed
-                 (progn
-                   (message "No match found (%s) in .config" depend-on)
-                   (setq line (replace-regexp-in-string depend-on
-                                                        (concat depend-on "[=N]")
-                                                        line)))))
-              (switch-to-buffer backup-buffer)))))))
+	(let ((dependencies (substring line (match-end 0))))
+	  (dolist (depend (split-string dependencies "&&\\|||"))
+	    (message (string-trim depend))
+	    (let ((depend-on (string-trim depend))
+		  (backup-buffer (current-buffer)))
+	      (find-file (concat (projectile-acquire-root) kconfig-ref-config-file))
+	      (goto-char (point-min))
+	      (condition-case err
+		  (progn
+		    (if (re-search-forward (concat "CONFIG_" depend-on "=\\(.*\\)"))
+			(setq line (replace-regexp-in-string depend-on
+							     (concat depend-on "[=" (match-string 1) "]")
+							     line))
+		      (setq line (replace-regexp-in-string depend-on
+							   (concat depend-on "[=N]")
+							   line))))
+		(search-failed
+		 (progn
+		   (message "No match found (%s) in .config" depend-on)
+		   (setq line (replace-regexp-in-string depend-on
+							(concat depend-on "[=N]")
+							line)))))
+	      (switch-to-buffer backup-buffer)))))))
   line)
 
 ;;;###autoload
@@ -87,42 +87,43 @@ Argument LINE A line of the Kconfig definition block."
   "Ripgrep search hook."
 
   (let ((output-buffer-name "*kconfig-ref*")
-        (kconfig-output-string "")
-        (ripgrep-search-buffer-name (concat "*ripgrep-search*<" (projectile-project-name) ">")))
+	(kconfig-output-string "")
+	(ripgrep-search-buffer-name (concat "*ripgrep-search*<" (projectile-project-name) ">")))
 
     (get-buffer-create output-buffer-name)
     (with-current-buffer ripgrep-search-buffer-name
       (message (buffer-name))
       (goto-char (point-min))
       (when (re-search-forward "\\(.*\\):\\(.*\\):\\([ \t]*config.*\\)")
-        (let ((kconfig-path (match-string 1))
-              (kconfig-lnum (match-string 2))
-              (kconfig-item (match-string 3))
-              (kconfig-done nil))
-          (setq kconfig-output-string
-                (concat (format "Found in [[%s::%s][%s]]\n\n"
-                                (concat (projectile-acquire-root) kconfig-path)
-                                kconfig-lnum
-                                kconfig-path)
-                        kconfig-ref-last-find-config "\n"))
-          (find-file kconfig-path)
-          (goto-char (point-min))
-          (search-forward kconfig-item)
-          (forward-line 1)
-          (beginning-of-line)
-          (while (and
-                  (not (eobp))
-                  (equal kconfig-done nil))
-            (let ((line (buffer-substring-no-properties
-                         (line-beginning-position) (line-end-position))))
-              ;; Check block is ended
-              (if (not (string-match "^[ \t]*config [A-Z_]+" line))
-                  (progn
-                    (setq kconfig-output-string
-                          (concat kconfig-output-string (kconfig-ref-parse-item line) "\n"))
-                    ;; (setq kconfig-output-string (concat kconfig-output-string line "\n"))
-                    (forward-line 1))
-                (setq kconfig-done t))))))
+	(let ((kconfig-path (match-string 1))
+	      (kconfig-lnum (match-string 2))
+	      (kconfig-item (match-string 3))
+	      (kconfig-done nil))
+	  (setq kconfig-output-string
+		(concat (format "Found in [[%s::%s][%s]]\n\n"
+				(concat (projectile-acquire-root) kconfig-path)
+				kconfig-lnum
+				kconfig-path)
+			kconfig-ref-last-find-config "\n"))
+	  (find-file kconfig-path)
+	  (goto-char (point-min))
+	  (search-forward kconfig-item)
+	  (forward-line 1)
+	  (beginning-of-line)
+	  (while (and
+		  (not (eobp))
+		  (equal kconfig-done nil))
+	    (let ((line (buffer-substring-no-properties
+			 (line-beginning-position) (line-end-position))))
+	      ;; Check block is ended
+	      (if (not (string-match "^[ \t]*config [A-Z_]+" line))
+		  (progn
+		    (setq kconfig-output-string
+			  (concat kconfig-output-string (kconfig-ref-parse-item line) "\n"))
+		    ;; (setq kconfig-output-string (concat kconfig-output-string line "\n"))
+		    (forward-line 1))
+		(setq kconfig-done t))))
+	  (kill-buffer)))
       (kill-buffer ripgrep-search-buffer-name))
     (with-current-buffer output-buffer-name
       (erase-buffer)
@@ -144,8 +145,8 @@ Argument NAME kconfig symbol name."
     (setq kconfig-ref-last-find-config config-key)
     (add-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook)
     (ripgrep-regexp config-key
-                    (projectile-acquire-root)
-                    '("-g 'Kconfig*'" ))))
+		    (projectile-acquire-root)
+		    '("-g 'Kconfig*'" ))))
 
 ;;;###autoload
 (defun kconfig-ref-find-config ()
