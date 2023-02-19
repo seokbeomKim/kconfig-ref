@@ -7,9 +7,9 @@
 ;; Created: February 19, 2023
 ;; Modified: February 19, 2023
 ;; Version: 0.1.0
-;; Keywords: kconfig, linux, kernel
+;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
-;; Package-Requires: ((emacs "24.3"))
+;; Package-Requires: ((emacs "24.4"))
 
 ;; This file is not part of GNU Emacs.
 
