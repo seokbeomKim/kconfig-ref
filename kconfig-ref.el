@@ -8,7 +8,7 @@
 ;; Modified: February 19, 2023
 ;; Version: 0.1.0
 ;; Keywords: kconfig, linux, kernel
-;; Homepage: https://github.com/sukbeom/package
+;; Homepage: https://github.com/seokbeomkim/kconfig-ref
 ;; Package-Requires: ((emacs "24.3"))
 
 ;; This file is not part of GNU Emacs.
@@ -126,7 +126,8 @@
     (setq kconfig-ref-last-find-config config-key)
     (add-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook)
     (ripgrep-regexp config-key
-                    (projectile-acquire-root))))
+                    (projectile-acquire-root)
+                    '("-g 'Kconfig*'" ))))
 
 (defun kconfig-ref-find-config ()
   "Find kconfig deinifition under the cursor"
@@ -136,4 +137,4 @@
   (kconfig-ref-find-file-with-name valid-input))
 
 (provide 'kconfig-ref)
-;;; package.el ends here
+;;; kconfig-ref.el ends here
