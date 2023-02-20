@@ -9,7 +9,7 @@
 ;; Version: 0.1.0
 ;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
-;; Package-Requires: ((emacs "24.4") (ripgrep "20220520.1410") (projectile "2.7.0"))
+;; Package-Requires: ((emacs "24.4") (ripgrep "0.4.0") (projectile "2.7.0"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'ripgrep)
+(require 'projectile)
 
 (defvar kconfig-ref-config-file ".config")
 (defvar kconfig-ref-last-find-config nil)
@@ -89,7 +90,8 @@ Argument LINE A line of the Kconfig definition block."
   (let ((output-buffer-name "*kconfig-ref*")
 	(kconfig-output-string "")
 	(ripgrep-search-buffer-name (concat "*ripgrep-search*<" (projectile-project-name) ">")))
-
+    (if (not (buffer-live-p (get-buffer ripgrep-search-buffer-name)))
+	(setq ripgrep-search-buffer-name "*ripgrep-search*"))
     (get-buffer-create output-buffer-name)
     (with-current-buffer ripgrep-search-buffer-name
       (message (buffer-name))
@@ -135,7 +137,7 @@ Argument LINE A line of the Kconfig definition block."
       (goto-char (point-min))))
   (other-window 1)
   (switch-to-buffer kconfig-ref-backup-buffer)
-  (remove-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook))
+  (remove-hook 'ripgrep-search-finished-hook #'kconfig-ref-find-file-hook))
 
 ;;;###autoload
 (defun kconfig-ref-find-file-with-name (name)
@@ -143,7 +145,7 @@ Argument LINE A line of the Kconfig definition block."
 Argument NAME kconfig symbol name."
   (let ((config-key (concat "config " name)))
     (setq kconfig-ref-last-find-config config-key)
-    (add-hook 'ripgrep-search-finished-hook 'kconfig-ref-find-file-hook)
+    (add-hook 'ripgrep-search-finished-hook #'kconfig-ref-find-file-hook)
     (ripgrep-regexp config-key
 		    (projectile-acquire-root)
 		    '("-g 'Kconfig*'" ))))
