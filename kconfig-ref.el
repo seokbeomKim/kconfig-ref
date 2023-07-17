@@ -5,11 +5,11 @@
 ;; Author: Jason Kim <sukbeom.kim@gmail.com>
 ;; Maintainer: Jason Kim <sukbeom.kim@gmail.com>
 ;; Created: February 19, 2023
-;; Modified: February 19, 2023
-;; Version: 0.1.0
+;; Modified: July 23, 2023
+;; Version: 0.2.0
 ;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
-;; Package-Requires: ((emacs "24.4") (ripgrep "0.4.0") (projectile "2.7.0"))
+;; Package-Requires: ((emacs "24.4") (projectile "2.7.0"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -34,129 +34,390 @@
 ;; Setup:
 
 ;; (require 'kconfig-ref)
-
 ;;; Code:
-
-(require 'ripgrep)
 (require 'projectile)
+(require 'emacsql)
+(require 'emacsql-sqlite)
+(require 'json)
 
-(defvar kconfig-ref-config-file ".config")
-(defvar kconfig-ref-last-find-config nil)
-(defvar kconfig-ref-backup-buffer nil)
+(defvar kconfig-ref--progress-reporter nil)
+(defvar kconfig-ref--progress-count 0)
+(defvar kconfig-ref--progress-max 0)
+(defvar kconfig-ref--flag-update-buffer nil)
+(defvar kconfig-ref--default-arch "arm64")
 
 ;;;###autoload
 (defun kconfig-ref-config-file-exist ()
   "Check .config exists in the Linux kernel source tree."
-  (file-exists-p (concat (projectile-acquire-root) ".config")))
+  (let ((dotfile-path (expand-file-name ".config" (projectile-acquire-root))))
+    (if (file-exists-p dotfile-path)
+        dotfile-path
+      nil)))
 
 ;;;###autoload
-(defun kconfig-ref-parse-item (line)
-  "Add dependency information through parsing .config.
-Argument LINE A line of the Kconfig definition block."
-  (when (string-match "depends on" line)
-    ;; if .config does not exist, skip to parse .config file
-    (if (not (kconfig-ref-config-file-exist))
-	(message "No .config in the kernel root directory.")
-      (progn
-	(let ((dependencies (substring line (match-end 0))))
-	  (dolist (depend (split-string dependencies "&&\\|||"))
-	    (message (string-trim depend))
-	    (let ((depend-on (string-trim depend))
-		  (backup-buffer (current-buffer)))
-	      (find-file (concat (projectile-acquire-root) kconfig-ref-config-file))
-	      (goto-char (point-min))
-	      (condition-case err
-		  (progn
-		    (if (re-search-forward (concat "CONFIG_" depend-on "=\\(.*\\)"))
-			(setq line (replace-regexp-in-string depend-on
-							     (concat depend-on "[=" (match-string 1) "]")
-							     line))
-		      (setq line (replace-regexp-in-string depend-on
-							   (concat depend-on "[=N]")
-							   line))))
-		(search-failed
-		 (progn
-		   (message "No match found (%s) in .config" depend-on)
-		   (setq line (replace-regexp-in-string depend-on
-							(concat depend-on "[=N]")
-							line)))))
-	      (switch-to-buffer backup-buffer)))))))
-  line)
-
-;;;###autoload
-(defun kconfig-ref-find-file-hook ()
-  "Ripgrep search hook."
-
-  (let ((output-buffer-name "*kconfig-ref*")
-	(kconfig-output-string "")
-	(ripgrep-search-buffer-name (concat "*ripgrep-search*<" (projectile-project-name) ">")))
-    (if (not (buffer-live-p (get-buffer ripgrep-search-buffer-name)))
-	(setq ripgrep-search-buffer-name "*ripgrep-search*"))
-    (get-buffer-create output-buffer-name)
-    (with-current-buffer ripgrep-search-buffer-name
-      (message (buffer-name))
-      (goto-char (point-min))
-      (when (re-search-forward "\\(.*\\):\\(.*\\):\\([ \t]*config.*\\)")
-	(let ((kconfig-path (match-string 1))
-	      (kconfig-lnum (match-string 2))
-	      (kconfig-item (match-string 3))
-	      (kconfig-done nil))
-	  (setq kconfig-output-string
-		(concat (format "Found in [[%s::%s][%s]]\n\n"
-				(concat (projectile-acquire-root) kconfig-path)
-				kconfig-lnum
-				kconfig-path)
-			kconfig-ref-last-find-config "\n"))
-	  (find-file kconfig-path)
-	  (goto-char (point-min))
-	  (search-forward kconfig-item)
-	  (forward-line 1)
-	  (beginning-of-line)
-	  (while (and
-		  (not (eobp))
-		  (equal kconfig-done nil))
-	    (let ((line (buffer-substring-no-properties
-			 (line-beginning-position) (line-end-position))))
-	      ;; Check block is ended
-	      (if (not (string-match "^[ \t]*config [A-Z_]+" line))
-		  (progn
-		    (setq kconfig-output-string
-			  (concat kconfig-output-string (kconfig-ref-parse-item line) "\n"))
-		    ;; (setq kconfig-output-string (concat kconfig-output-string line "\n"))
-		    (forward-line 1))
-		(setq kconfig-done t))))
-	  (kill-buffer)))
-      (kill-buffer ripgrep-search-buffer-name))
-    (with-current-buffer output-buffer-name
-      (erase-buffer)
-      (insert kconfig-output-string "\n")
-      (other-window 1)
-      (switch-to-buffer output-buffer-name)
-      (org-mode)
-      (read-only-mode t)
-      (goto-char (point-min))))
-  (other-window 1)
-  (switch-to-buffer kconfig-ref-backup-buffer)
-  (remove-hook 'ripgrep-search-finished-hook #'kconfig-ref-find-file-hook))
-
-;;;###autoload
-(defun kconfig-ref-find-file-with-name (name)
-  "Set config-key as search keyword such as \"config SPI\".
-Argument NAME kconfig symbol name."
-  (let ((config-key (concat "config " name)))
-    (setq kconfig-ref-last-find-config config-key)
-    (add-hook 'ripgrep-search-finished-hook #'kconfig-ref-find-file-hook)
-    (ripgrep-regexp config-key
-		    (projectile-acquire-root)
-		    '("-g 'Kconfig*'" ))))
-
-;;;###autoload
-(defun kconfig-ref-find-config ()
+(defun kconfig-ref-find-config-at-cursor ()
   "Find kconfig deinifition under the cursor."
   (interactive)
-  (setq kconfig-ref-backup-buffer (current-buffer))
+  (kconfig-ref--set-db-filepath)
   (setq-local valid-input (replace-regexp-in-string "^CONFIG_" "" (current-word)))
-  (kconfig-ref-find-file-with-name valid-input))
+  (kconfig-ref-find-config-by-name valid-input))
+
+(defun kconfig-ref-get-projectile-root-dir ()
+  "Get projectile root directory path.
+If the return value is nil then return error."
+  (or (projectile-project-root)
+      (error "Invalid projectile root directory")))
+
+(defvar kconfig-ref-db-filename "kconfig-ref.db")
+(defvar kconfig-ref-db-filepath (format "~/%s" kconfig-ref-db-filename))
+(defvar kconfig-ref-db nil)
+
+(defun kconfig-ref--init-table (&optional force)
+  "Initialize a config table.
+If FORCE is true, re-create the table after remove the previous one."
+  (if force
+      (ignore-errors
+        (emacsql kconfig-ref-db [:drop-table configs])))
+  (emacsql kconfig-ref-db
+           [:create-table configs
+                          ([(id integer :primary-key :autoincrement) ; primary key
+                            name                                     ; config name
+                            (type integer)                           ; 0: menuconfig, 1: config
+                            file_loc                                 ; file location
+                            line_num                                 ; line number
+                            conf_val                                 ; config value
+                            dirty])]))                               ; dirty bit
+
+(defun kconfig-ref--get-random-uuid ()
+  "Insert a random UUID."
+  (format "%04x%04x-%04x-%04x-%04x-%06x%06x"
+          (random (expt 16 4))
+          (random (expt 16 4))
+          (random (expt 16 4))
+          (random (expt 16 4))
+          (random (expt 16 4))
+          (random (expt 16 6))
+          (random (expt 16 6))))
+
+(defun kconfig-ref--set-db-filepath ()
+  "Set kconfig-ref database filepath."
+  (let ((session-private-dir (kconfig-ref--init-private-directory))
+        (db-json-file-name "db.json")
+        (db-json-file-path nil)
+        (parsed-data nil)
+        (json-data nil)
+        (new-uuid nil)
+        (project-root-dir (kconfig-ref-get-projectile-root-dir)))
+    (setq db-json-file-path (expand-file-name db-json-file-name session-private-dir))
+    (if (file-exists-p db-json-file-path)
+        (with-temp-buffer (insert-file-contents db-json-file-path)
+                          (setq parsed-data (json-read-from-string (buffer-string)))))
+    (if (catch 'session-db
+          (dolist (p parsed-data)
+            (when (string= (car p) project-root-dir)
+              (setq kconfig-ref-db-filepath (expand-file-name (cdr p) session-private-dir))
+              (throw 'session-db nil)))
+          t)
+        (progn
+          (setq new-uuid (kconfig-ref--get-random-uuid))
+          (setq kconfig-ref-db-filepath (expand-file-name new-uuid session-private-dir))
+          (push (cons project-root-dir new-uuid) parsed-data)))
+    (setq json-data (json-encode parsed-data))
+    (write-region json-data nil db-json-file-path))
+  (message kconfig-ref-db-filepath)
+  (setq kconfig-ref-db (emacsql-sqlite kconfig-ref-db-filepath)))
+
+(defun kconfig-ref--create-db (projectile-rootdir &optional force)
+  "Create a DB in projectile root directory.
+Initialize `configs' table as well. `PROJECTILE-ROOTDIR' is essential.
+Optional argument FORCE Create the database by force. This option will remove out the previous one. ."
+  (if projectile-rootdir
+      (progn
+        (kconfig-ref--set-db-filepath)
+        (condition-case err
+            (kconfig-ref--init-table force)
+          (error "Failed to create db: " err)))
+    (error (format "Invalid projectile-rootdir %s" projectile-rootdir))))
+
+(defun kconfig-ref--get-syntax-type (syntax)
+  "Get Kconfig SYNTAX from the parsed line."
+  (let ((kconfig-syntax-type1 '("source" "menuconfig" "config"))
+        (kconfig-syntax-type2 '("depends" "select"))
+        res)
+    (dolist (keyword kconfig-syntax-type1)
+      (if (string= keyword (string-trim-right syntax))
+          (setq res keyword)))
+    (dolist (keyword kconfig-syntax-type2)
+      (if (string= keyword (string-trim-left syntax))
+          (setq res keyword)))
+    res))
+
+(defun kconfig-ref--add-item (config type filepath line-number)
+  "Insert a new item.
+Argument CONFIG the name of the config-item.
+Argument TYPE 0: menuconfig, 1: config.
+Argument FILEPATH Kconfig file path.
+Argument LINE-NUMBER Line number of the config."
+  (emacsql kconfig-ref-db
+           [:insert :into configs
+            :values $v1]
+           (list (vector nil config type filepath line-number "is not set" 0))))
+
+(defun kconfig-ref--update-item (config type filepath line-number)
+  "Update the record.
+`dirty' is a flag used to clean up unused CONFIGs but defined
+previously.
+Argument CONFIG the config name.
+Argument TYPE 0: menuconfig, 1: config.
+Argument FILEPATH Kconfig file path.
+Argument LINE-NUMBER Line number of the config."
+  (let ((target-id (car (car (emacsql kconfig-ref-db
+                                      [:select id :from configs
+                                       :where (and (= name $s1)
+                                                   (= file-loc $s2))]
+                                      config filepath)))))
+    (if target-id
+        (emacsql kconfig-ref-db
+                 [:update configs
+                  :set [(= file-loc $s1) (= line_num $s2) (= dirty 0)]
+                  :where (= id $s3)]
+                 filepath line-number target-id)
+      (kconfig-ref--add-item config type filepath line-number))))
+
+(defun kconfig-ref--parse-menuconfig (config filepath line-number)
+  "Parse a menuconfig and insert it into the database.
+Argument CONFIG
+Argument FILEPATH Kconfig file path.
+Argument LINE-NUMBER the line number of the config."
+  (if kconfig-ref--flag-update-buffer
+      (kconfig-ref--update-item config 0 filepath line-number)
+    (kconfig-ref--add-item config 0 filepath line-number)))
+
+(defun kconfig-ref--parse-config (config filepath line-number)
+  "Parse a CONFIG and insert it into the database.
+Argument FILEPATH Kconfig filepath.
+Argument LINE-NUMBER Line number of the config item."
+  (if kconfig-ref--flag-update-buffer
+      (kconfig-ref--update-item config 1 filepath line-number)
+    (kconfig-ref--add-item config 1 filepath line-number)))
+
+(defun kconfig-ref--find-last-record-id ()
+  "Return the primary key of the last record."
+  (car (car (emacsql kconfig-ref-db
+                     [:select (funcall max id) :from configs]))))
+
+(defun kconfig-ref--find-config-by-name (name)
+  "Get config description by the NAME."
+  (kconfig-ref--set-db-filepath)
+  (let ((trimmed-name (string-trim-left name "CONFIG_")))
+    (setq trimmed-name (replace-regexp-in-string "*" "%%" name))
+    (if (= 0 (length trimmed-name))
+        (setq trimmed-name "%%"))
+    (emacsql kconfig-ref-db
+             [:select * :from configs :where (like name $s1)]
+             (format "%s" trimmed-name))))
+
+(defvar kconfig-ref--choice-list nil)
+(defun kconfig-ref-find-config-by-name-choose (choice)
+  "Get the selection when the user try to find the config.
+Argument CHOICE user's selection."
+  (interactive
+   (list (completing-read "Choose: "
+                          kconfig-ref--choice-list nil t)))
+  (car (split-string choice " ")))
+
+(defun kconfig-ref--update-dot-value (conf val)
+  "Update dot config value.
+Argument CONF config name.
+Argument VAL config value."
+  (emacsql kconfig-ref-db
+           [:update configs
+            :set [(= conf_val $s2)]
+            :where (= name $s1)]
+           (string-trim-left conf "CONFIG_") val))
+
+(defun kconfig-ref--apply-dot-config (conf)
+  "Parse config and update the database.
+Argument CONF config name."
+  (let ((splitted (split-string conf "=")))
+    (if (null (string-match "\\# CONFIG_" conf))
+        (kconfig-ref--update-dot-value (nth 0 splitted) (nth 1 splitted))
+      (kconfig-ref--update-dot-value
+       (car (split-string conf " " t "#"))
+       "is not set"))))
+
+(defun kconfig-ref-parse-dotconfig ()
+  "Update dot config to database."
+  (interactive)
+  (condition-case err
+      (with-temp-buffer
+        (insert-file-contents (kconfig-ref-config-file-exist))
+        (setq kconfig-ref--progress-max (count-lines (point-min) (point-max)))
+        (setq kconfig-ref--progress-count 0)
+        (setq kconfig-ref--progress-reporter
+              (make-progress-reporter
+               "Parsing .config ... "
+               0 kconfig-ref--progress-max))
+
+        (mapcar (lambda (conf-val)
+                  (progress-reporter-update kconfig-ref--progress-reporter
+                                            kconfig-ref--progress-count)
+                  (kconfig-ref--apply-dot-config conf-val)
+                  (cl-incf kconfig-ref--progress-count))
+                (split-string (buffer-string) "\n" nil))
+        (progress-reporter-done kconfig-ref--progress-reporter))
+    (error (format "Failed to parse .config file: %s" err))))
+
+(defun kconfig-ref-find-config-by-name (name)
+  "Find a kconfig from the database.
+Argument NAME config name."
+  (interactive "sEnter the config: ")
+  (let ((query-result (kconfig-ref--find-config-by-name name)))
+    (if (> (length query-result) 1)
+        (progn
+          (setq kconfig-ref--choice-list
+                (mapcar (lambda (v)
+                          (list (format "%s [%s]" (nth 1 v) (nth 5 v)) . (v)))
+                        query-result))
+          (kconfig-ref-find-config-by-name
+           (call-interactively #'kconfig-ref-find-config-by-name-choose)))
+      (if (= (length query-result) 1)
+          (let ((filp (nth 3 (car query-result)))
+                (line (nth 4 (car query-result))))
+            (find-file filp)
+            (goto-line line))
+        (error (format "%s is not found" name))))))
+
+(defun kconfig-ref--find-last-record ()
+  "Query a config from the database."
+  (kconfig-ref--set-db-filepath)
+  (emacsql kconfig-ref-db
+           [:select * :from configs :where (= id $s1)]
+           (kconfig-ref--find-last-record-id)))
+
+(defun kconfig-ref--is-file-parsed (filepath)
+  "Check the FILEPATH (argument) is already parsed before."
+  (> (length (emacsql kconfig-ref-db
+                      [:select *
+                       :from configs
+                       :where (= file_loc $s1)]
+                      filepath)) 0))
+
+(defun kconfig-ref--parse-kconfig-syntax (syntax &optional filepath line-number)
+  "Parse a line of kconfig and do corresponding operation.
+Argument SYNTAX a line to parse.
+Optional argument FILEPATH Kconfig filepath.
+Optional argument LINE-NUMBER line number of the config."
+  (let ((keyword (kconfig-ref--get-syntax-type (car (split-string syntax " "))))
+        (remains (cdr (split-string syntax " "))))
+    (cond ((string= "source" keyword)
+           (let ((kconfig-ref--sub-kconfig-filepath
+                  (replace-regexp-in-string "\$\(SRCARCH\)" kconfig-ref--default-arch
+                                            (expand-file-name
+                                             (replace-regexp-in-string "\"" "" (car remains))
+                                             (projectile-project-root)) t)))
+             (if (or
+                  (and kconfig-ref--flag-update-buffer
+                       (not (kconfig-ref--is-file-parsed kconfig-ref--sub-kconfig-filepath)))
+                  (not kconfig-ref--flag-update-buffer))
+                 (kconfig-ref--parse-kconfig-file kconfig-ref--sub-kconfig-filepath)))))
+    (cond ((string= "menuconfig" keyword)
+           (kconfig-ref--parse-menuconfig (car remains) filepath line-number)))
+    (cond ((string= "config" keyword)
+           (kconfig-ref--parse-config (car remains) filepath line-number)))))
+
+(defun kconfig-ref--parse-kconfig-file (filepath)
+  "Parse a kernel source tree and insert items into the database.
+`dirpath' must be valid.
+Argument FILEPATH Kconfig file path."
+  (if (null filepath)
+      (error "Invalid filepath: nil")
+    (if (null kconfig-ref--flag-update-buffer)
+        (progn
+          (cl-incf kconfig-ref--progress-count)
+          (progress-reporter-update kconfig-ref--progress-reporter kconfig-ref--progress-count))))
+  (let ((line-number 1))
+    (with-temp-buffer
+      (insert-file-contents filepath)
+      (mapcar (lambda (syntax)
+                (kconfig-ref--parse-kconfig-syntax syntax filepath line-number)
+                (cl-incf line-number))
+              (split-string (buffer-string) "\n" nil)))))
+
+(defun kconfig-ref--init-progress ()
+  "Initialize kconfig-ref progress counter."
+  (let ((default-directory (kconfig-ref-get-projectile-root-dir)))
+    (shell-command
+     (format "find . -name 'Kconfig' | wc -l")
+     "*kconfig-ref*"))
+
+  (let ((number-of-kconfig (string-to-number (with-current-buffer "*kconfig-ref*" (buffer-string)))))
+    (setq kconfig-ref--progress-count 0)
+    (setq kconfig-ref--progress-max number-of-kconfig)
+    (setq kconfig-ref--progress-reporter (make-progress-reporter
+                                          "Parsing kconfig in the Linux kernel... "
+                                          0 number-of-kconfig))))
+
+(defun kconfig-ref-init-db ()
+  "Generate a new database and parse Kconfig(s) in the kernel source tree."
+  (interactive)
+  (kconfig-ref-create-db t))
+
+(defun kconfig-ref-create-db (&optional force)
+  "Create a sqlite db in projectile root directory.
+Optional argument FORCE Create the database by force."
+  (kconfig-ref--set-db-filepath)
+  (kconfig-ref--create-db (kconfig-ref-get-projectile-root-dir) force)
+  (kconfig-ref--init-progress)
+  (setq kconfig-ref--flag-update-buffer nil)
+  (kconfig-ref--parse-kconfig-file
+   (expand-file-name "Kconfig" (kconfig-ref-get-projectile-root-dir)))
+
+  (progress-reporter-update kconfig-ref--progress-reporter kconfig-ref--progress-max)
+  (progress-reporter-done kconfig-ref--progress-reporter))
+
+(defun kconfig-ref--clean-dirty-records ()
+  "Mark dirty bit of records in filepath."
+  (emacsql kconfig-ref-db
+           [:delete :from configs :where (= dirty 1)]))
+
+(defun kconfig-ref--mark-dirty-by-filepath (filepath)
+  "Remove all records with dirty bit.
+Argument FILEPATH Kconfig filepath."
+  (emacsql kconfig-ref-db
+           [:update configs
+            :set [(= dirty 1)]
+            :where (= file-loc $s1)]
+           filepath))
+
+(defun kconfig-ref-parse-current-buffer ()
+  "Parse Kconfig (current buffer) and update the database."
+  (interactive)
+  (let ((filename (if (equal major-mode 'dired-mode)
+                      default-directory
+                    (buffer-file-name))))
+    (when filename
+      (kill-new filename)
+      (setq kconfig-ref--flag-update-buffer t)
+      (cond ((string= (file-name-base filename) "Kconfig")
+             (progn
+               (kconfig-ref--mark-dirty-by-filepath filename)
+               (kconfig-ref--parse-kconfig-file filename)
+               (kconfig-ref--clean-dirty-records)))))))
+
+(defvar kconfig-ref--user-directory (expand-file-name "kconfig-ref" user-emacs-directory))
+
+(defun kconfig-ref--init-private-directory ()
+  "Initialize private directory for kconfig-ref."
+  (ignore-errors
+    (mkdir kconfig-ref--user-directory))
+  (funcall
+   '(lambda (session-name)
+      (let ((session-directory-path (expand-file-name session-name kconfig-ref--user-directory)))
+        (if (not (file-exists-p (expand-file-name session-name kconfig-ref--user-directory)))
+            (mkdir session-directory-path))
+        session-directory-path))
+   (or (file-remote-p default-directory 'host) "default")))
 
 (provide 'kconfig-ref)
 ;;; kconfig-ref.el ends here
