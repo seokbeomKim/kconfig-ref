@@ -3,6 +3,8 @@
 kconfig-ref is an Emacs package that helps you find the Kconfig implementation
 of a symbol under the cursor quickly.
 
+![kconfig-ref-usage](https://github.com/seokbeomKim/kconfig-ref/blob/images/kconfig-ref-screenshot.gif "kconfig-ref usage")
+
 ## Installation
 
 ```

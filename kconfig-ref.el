@@ -6,7 +6,7 @@
 ;; Maintainer: Jason Kim <sukbeom.kim@gmail.com>
 ;; Created: February 19, 2023
 ;; Modified: July 23, 2023
-;; Version: 0.2.0
+;; Version: 0.2.1
 ;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
 ;; Package-Requires: ((emacs "24.4") (projectile "2.7.0"))
@@ -249,6 +249,7 @@ Argument CONF config name."
 (defun kconfig-ref-parse-dotconfig ()
   "Update dot config to database."
   (interactive)
+  (kconfig-ref--set-db-filepath)
   (condition-case err
       (with-temp-buffer
         (insert-file-contents (kconfig-ref-config-file-exist))
