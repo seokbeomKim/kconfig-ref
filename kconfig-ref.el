@@ -9,7 +9,7 @@
 ;; Version: 0.2.1
 ;; Keywords: tools, kconfig, linux, kernel
 ;; Homepage: https://github.com/seokbeomkim/kconfig-ref
-;; Package-Requires: ((emacs "24.4") (projectile "2.7.0"))
+;; Package-Requires: ((emacs "24.4") (projectile "2.7.0") emacsql)
 
 ;; This file is not part of GNU Emacs.
 
